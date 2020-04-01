@@ -55,7 +55,7 @@ public class OpenStreetMaps {
     }
 
     public static enum Attributes {
-        ISBRIDGE, ISTUNNEL, NONE
+        BRIDGE, TUNNEL, STANDARD
     }
 
     public static class noneBoolAttributes {
@@ -207,7 +207,7 @@ public class OpenStreetMaps {
         Set<Long> ground = new HashSet<Long>();
 
         for (Element elem : data.elements) {
-            Attributes attributes = Attributes.NONE;
+            Attributes attribute = Attributes.STANDARD;
             if (elem.type == EType.way) {
                 allWays.put(elem.id, elem);
 
@@ -226,7 +226,6 @@ public class OpenStreetMaps {
                 if (doRoad) {
                     highway = elem.tags.get("highway");
                     istunnel = elem.tags.get("tunnel");
-                    // to be implemented
                     isbridge = elem.tags.get("bridge");
                 }
 
@@ -239,7 +238,7 @@ public class OpenStreetMaps {
                 } else if (highway != null || (waterway != null && (waterway.equals("river") ||
                         waterway.equals("canal") || waterway.equals("stream"))) || building != null) { //TODO: fewer equals
 
-                    Type type = Type.ROAD;
+                    Type type = null;
 
                     if (waterway != null) {
                         type = Type.STREAM;
@@ -252,16 +251,16 @@ public class OpenStreetMaps {
 
                     if (istunnel != null && istunnel.equals("yes")) {
 
-                        attributes = Attributes.ISTUNNEL;
+                        attribute = Attributes.TUNNEL;
 
                     } else if (isbridge != null && isbridge.equals("yes")) {
 
-                        attributes = Attributes.ISBRIDGE;
+                        attribute = Attributes.BRIDGE;
 
                     } else {
-
+                        type = Type.ROAD;
                         // totally skip classification if it's a tunnel or bridge. this should make it more efficient.
-                        if (highway != null && attributes == Attributes.NONE) {
+                        if (highway != null && attribute == Attributes.STANDARD) {
                             switch (highway) {
                                 case "motorway":
                                     type = Type.FREEWAY;
@@ -340,7 +339,7 @@ public class OpenStreetMaps {
                     if (lanes > 2 && type == Type.MINOR)
                         type = Type.MAIN;
 
-                    addWay(elem, type, lanes, region, attributes, layer);
+                    addWay(elem, type, lanes, region, attribute, layer);
                 } else unusedWays.add(elem);
             } else if (elem.type == EType.relation && elem.members != null && elem.tags != null) {
 
@@ -367,7 +366,7 @@ public class OpenStreetMaps {
                         if (member.type == EType.way) {
                             Element way = allWays.get(member.ref);
                             if (way != null) {
-                                addWay(way, Type.BUILDING, (byte) 1, region, Attributes.NONE, (byte) 0);
+                                addWay(way, Type.BUILDING, (byte) 1, region, Attributes.STANDARD, (byte) 0);
                                 unusedWays.remove(way);
                             }
                         }
@@ -533,7 +532,7 @@ public class OpenStreetMaps {
         public double slon;
         public double elat;
         public double elon;
-        public Attributes attribute;
+        public Attributes attributes;
         public byte layer_number;
         public double slope;
         public double offset;
@@ -559,12 +558,14 @@ public class OpenStreetMaps {
                 }
             }
 
+            // s = start, e = end
+
             this.slat = slat;
             this.slon = slon;
             this.elat = elat;
             this.elon = elon;
             this.type = type;
-            this.attribute = att;
+            this.attributes = att;
             this.lanes = lanes;
             this.region = region;
             this.layer_number = ly;

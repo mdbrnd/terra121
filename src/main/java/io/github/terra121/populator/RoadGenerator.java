@@ -1,12 +1,12 @@
 package io.github.terra121.populator;
 
+import java.util.Iterator;
 import java.util.Random;
 import java.util.Set;
 import java.util.function.BiFunction;
-
 import io.github.opencubicchunks.cubicchunks.api.util.CubePos;
 import io.github.opencubicchunks.cubicchunks.api.worldgen.populator.ICubicPopulator;
-import io.github.terra121.TerraMod;
+import io.github.terra121.TerraConfig;
 import io.github.terra121.dataset.Heights;
 import io.github.terra121.dataset.OpenStreetMaps;
 import io.github.terra121.projection.GeographicProjection;
@@ -18,11 +18,11 @@ import net.minecraft.item.EnumDyeColor;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraft.world.biome.Biome;
-import net.minecraftforge.event.entity.player.PlayerContainerEvent;
 
 public class RoadGenerator implements ICubicPopulator {
 	
     private static final IBlockState ASPHALT = Blocks.CONCRETE.getDefaultState().withProperty(BlockColored.COLOR, EnumDyeColor.GRAY);
+    private static final IBlockState AIR = Blocks.AIR.getDefaultState();
     private static final IBlockState WATER_SOURCE = Blocks.WATER.getDefaultState();
     //private static final IBlockState WATER_RAMP = Blocks.WATER.getDefaultState().withProperty(BlockLiquid.LEVEL, );
     private static final IBlockState WATER_BEACH = Blocks.DIRT.getDefaultState();
@@ -32,8 +32,33 @@ public class RoadGenerator implements ICubicPopulator {
     private GeographicProjection projection;
 
     // only use for roads with markings
-    public double calculateRoadWidth(int w, int l) {
-        return Math.ceil(((1+w)*l+l)/2);
+    public double calculateRoadWidth(int l, OpenStreetMaps.Type c) {
+        int width = 2;
+        switch (c) {
+            case MINOR:
+                width = l*2;
+                break;
+            case SIDE:
+                width = l*3+1;
+                break;
+            case MAIN:
+                width = 4*l+l;
+                break;
+            case FREEWAY:
+            case LIMITEDACCESS:
+            case INTERCHANGE:
+                width = 5*l+l+6;
+                break;
+            default:
+                break;
+        }
+        // there are really no roads over 256 m width. it's probably a mistake.
+        // i even researched this, and the widest road (that 50 lane one in China) is 123 meters, just under
+        // the limit for a byte. so then...
+        if (width > 128) {
+            width = 2;
+        }
+        return width;
     }
 
     public RoadGenerator(OpenStreetMaps osm, Heights heights, GeographicProjection proj) {
@@ -49,7 +74,11 @@ public class RoadGenerator implements ICubicPopulator {
         Set<OpenStreetMaps.Edge> edges = osm.chunkStructures(cubeX, cubeZ);
 		
         if(edges!=null) { 
-        	
+
+            if (TerraConfig.debugModeActive) {
+                System.out.println(String.format("Cubes for debugging -> X: {}, Y: {}, Z: {}", cubeX, cubeY, cubeZ));
+            }
+
         	// rivers done before roads
         	for(OpenStreetMaps.Edge e: edges) {
 	            if(e.type == OpenStreetMaps.Type.RIVER) {
@@ -64,35 +93,32 @@ public class RoadGenerator implements ICubicPopulator {
 
             // TODO add generation of road markings
 
-            // TODO simplify road width
+            // TODO delete this
+            for (int i = 0; i < 10; i++) {
 
-	        for(OpenStreetMaps.Edge e: edges) {
-	            // this will obviously be deleted once the levels actually do something
-                // System.out.println("Generating road on level: " + e.layer_number);
-                if (e.attribute != OpenStreetMaps.Attributes.ISTUNNEL) {
-                    switch (e.type) {
-                        case MINOR:
-                            placeEdge(e, world, cubeX, cubeY, cubeZ, Math.ceil((2 * e.lanes) / 2), (dis, bpos) -> ASPHALT);
-                            break;
-                        case SIDE:
-                            placeEdge(e, world, cubeX, cubeY, cubeZ, Math.ceil((3 * e.lanes + 1) / 2), (dis, bpos) -> ASPHALT);
-                            break;
-                        case MAIN:
-                            placeEdge(e, world, cubeX, cubeY, cubeZ, calculateRoadWidth(2, e.lanes), (dis, bpos) -> ASPHALT);
-                            break;
-                        case FREEWAY:
-                        case LIMITEDACCESS:
-                            placeEdge(e, world, cubeX, cubeY, cubeZ, calculateRoadWidth(4, e.lanes) + 2, (dis, bpos) -> ASPHALT);
-                            break;
-                        case INTERCHANGE:
-                            placeEdge(e, world, cubeX, cubeY, cubeZ, Math.ceil((3 * e.lanes) / 2), (dis, bpos) -> ASPHALT);
-                            break;
-                        default:
-                            // might be a tunnel or a bridge, mainly for debugging purposes
-                            break;
-                    }
+            }
+
+            double lastEndLat = 0;
+        	double lastEndLon = 0;
+            for (Iterator<OpenStreetMaps.Edge> i = edges.iterator(); i.hasNext(); ) {
+                OpenStreetMaps.Edge e = i.next();
+                if (e.attributes == OpenStreetMaps.Attributes.TUNNEL || e.attributes == OpenStreetMaps.Attributes.BRIDGE) {
+                    lastEndLat = e.elat; lastEndLon = e.elon;
                 }
-	        }
+                // we can confidently cast it to a byte because it has to be 128 or less
+                byte finalWidth = (byte) Math.floor(calculateRoadWidth(e.lanes, e.type));
+                placeEdge(e, world, cubeX, cubeY, cubeZ, finalWidth, (dis, bpos) -> ASPHALT);
+                switch (e.attributes) {
+                    case TUNNEL:
+                        //e.elat = ;
+                        //placeEdge(e, world, cubeX, cubeY, cubeZ, finalWidth, (dis, bpos) -> ASPHALT);
+                        break;
+                    case BRIDGE:
+                        break;
+                    default:
+                        // probably a code error...
+                }
+            }
         }
     }
 
